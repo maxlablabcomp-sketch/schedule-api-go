@@ -30,17 +30,18 @@ func NewRedisCache() (*RedisCache, error) {
     addr := fmt.Sprintf("%s:%s", host, port)
 
     client := redis.NewClient(&redis.Options{
-        Addr:     addr,
-        Password: "", // No password for local Redis
-        DB:       0,
+        Addr: addr,
+        DB:   0,
     })
 
     ctx := context.Background()
 
-    // Test connection
     if err := client.Ping(ctx).Err(); err != nil {
         log.Printf("⚠️ Redis connection failed: %v, will use fallback only", err)
-        return nil, err
+        return &RedisCache{
+            client: client,
+            ctx:    ctx,
+        }, nil
     }
 
     log.Printf("✅ Connected to Redis at %s", addr)
@@ -55,7 +56,6 @@ func (r *RedisCache) Set(key string, value interface{}, ttl int) error {
     if err != nil {
         return err
     }
-
     return r.client.Set(r.ctx, key, data, time.Duration(ttl)*time.Millisecond).Err()
 }
 
@@ -64,18 +64,9 @@ func (r *RedisCache) Get(key string, dest interface{}) error {
     if err != nil {
         return err
     }
-
     return json.Unmarshal(data, dest)
-}
-
-func (r *RedisCache) Delete(key string) error {
-    return r.client.Del(r.ctx, key).Err()
 }
 
 func (r *RedisCache) Ping() error {
     return r.client.Ping(r.ctx).Err()
-}
-
-func (r *RedisCache) Close() error {
-    return r.client.Close()
 }
