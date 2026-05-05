@@ -25,7 +25,9 @@ WORKDIR /app
 
 # Copiar el binario desde la etapa builder
 COPY --from=builder /app/main .
-COPY --from=builder /app/.env.example .env
+
+# NO copies .env.example - usar variables de entorno de Render
+# COPY --from=builder /app/.env.example .env  <--- ELIMINA ESTA LÍNEA
 
 # Exponer puerto
 EXPOSE 3000
