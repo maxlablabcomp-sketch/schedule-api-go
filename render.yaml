@@ -4,14 +4,15 @@ services:
     name: schedule-redis
     plan: free
     maxmemoryPolicy: noeviction
-    ipAllowList: [] # Allow all connections (needs to be secured)
+    ipAllowList: []
 
-  # Servicio Web
+  # Servicio Web con Docker
   - type: web
     name: schedule-api
     runtime: image
-    repo: https://github.com/maxlablabcomp-sketch/schedule-api-go  # <-- CAMBIADO a tu repo
+    repo: https://github.com/maxlablabcomp-sketch/schedule-api-go
     plan: free
+    # La sintaxis correcta para Docker en Render
     dockerfilePath: ./Dockerfile
     envVars:
       - key: PORT
@@ -32,7 +33,5 @@ services:
         value: 300000
       - key: API_BASE_URL
         value: https://cloud.urbe.edu/web/v1/core/labComp/rotafolio
-      - key: GO_VERSION
-        value: "1.21"
     healthCheckPath: /health
     autoDeploy: true
