@@ -1,0 +1,38 @@
+services:
+  # Servicio Redis
+  - type: redis
+    name: schedule-redis
+    plan: free
+    maxmemoryPolicy: noeviction
+    ipAllowList: [] # Allow all connections (needs to be secured)
+
+  # Servicio Web
+  - type: web
+    name: schedule-api
+    runtime: image
+    repo: https://github.com/YOUR_USERNAME/schedule-api-go
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: REDIS_HOST
+        fromService:
+          name: schedule-redis
+          type: redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          name: schedule-redis
+          type: redis
+          property: port
+      - key: CACHE_TTL
+        value: 300000
+      - key: UPDATE_INTERVAL
+        value: 300000
+      - key: API_BASE_URL
+        value: https://cloud.urbe.edu/web/v1/core/labComp/rotafolio
+      - key: GO_VERSION
+        value: "1.21"
+    healthCheckPath: /health
+    autoDeploy: true
