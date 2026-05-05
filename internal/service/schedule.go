@@ -1,11 +1,12 @@
 package service
 
 import (
+    "compress/gzip"
     "encoding/json"
     "fmt"
+    "io"
     "log"
     "net/http"
-    "net/url"
     "os"
     "strconv"
     "sync"
@@ -23,7 +24,6 @@ type ScheduleService struct {
     apiTimeout  time.Duration
     isUpdating  bool
     updateMutex sync.Mutex
-    proxyURL    string
 }
 
 func NewScheduleService(redisCache *cache.RedisCache) *ScheduleService {
@@ -32,17 +32,13 @@ func NewScheduleService(redisCache *cache.RedisCache) *ScheduleService {
         apiURL = "https://cloud.urbe.edu/web/v1/core/labComp/rotafolio"
     }
 
-    apiTimeout := 300 * time.Second
-
-    // Obtener proxy de variables de entorno
-    proxyURL := os.Getenv("PROXY_URL")
+    apiTimeout := 300 * time.Second // 300 segundos como en NestJS
 
     return &ScheduleService{
         redis:      redisCache,
         fallback:   make(map[string][]models.ScheduleData),
         apiURL:     apiURL,
         apiTimeout: apiTimeout,
-        proxyURL:   proxyURL,
     }
 }
 
@@ -50,9 +46,6 @@ func (s *ScheduleService) Start() {
     log.Println("🚀 ScheduleService iniciado")
     log.Printf("⏰ Timeout configurado: %v", s.apiTimeout)
     log.Printf("🌐 API Base URL: %s", s.apiURL)
-    if s.proxyURL != "" {
-        log.Printf("🌐 Usando proxy: %s", s.proxyURL)
-    }
 
     // Primera actualización
     log.Println("📡 Ejecutando primera actualización...")
@@ -77,29 +70,7 @@ func (s *ScheduleService) Start() {
     }()
 }
 
-func (s *ScheduleService) createHTTPClient() *http.Client {
-    client := &http.Client{
-        Timeout: s.apiTimeout,
-    }
-
-    // Configurar proxy si está definido
-    if s.proxyURL != "" {
-        proxy, err := url.Parse(s.proxyURL)
-        if err == nil {
-            client.Transport = &http.Transport{
-                Proxy: http.ProxyURL(proxy),
-            }
-            log.Printf("🌐 Proxy configurado: %s", s.proxyURL)
-        } else {
-            log.Printf("⚠️ Error parsing proxy URL: %v", err)
-        }
-    }
-
-    return client
-}
-
 func (s *ScheduleService) update() {
-    // Evitar actualizaciones concurrentes
     s.updateMutex.Lock()
     if s.isUpdating {
         s.updateMutex.Unlock()
@@ -118,9 +89,10 @@ func (s *ScheduleService) update() {
     log.Println("=================================")
     log.Printf("🕒 %s - Iniciando actualización", time.Now().Format("2006-01-02 15:04:05"))
 
-    client := s.createHTTPClient()
+    client := &http.Client{
+        Timeout: s.apiTimeout,
+    }
 
-    // Fetch en paralelo
     type result struct {
         key  string
         data []models.ScheduleData
@@ -129,6 +101,7 @@ func (s *ScheduleService) update() {
 
     results := make(chan result, 2)
 
+    // Fetch Bloque F (idBloque=6) - igual que NestJS
     go func() {
         log.Println("📡 Solicitando BLOQUE F (idBloque=6)...")
         startF := time.Now()
@@ -142,6 +115,7 @@ func (s *ScheduleService) update() {
         results <- result{key: "F", data: data, err: nil}
     }()
 
+    // Fetch Bloque G (idBloque=7) - igual que NestJS
     go func() {
         log.Println("📡 Solicitando BLOQUE G (idBloque=7)...")
         startG := time.Now()
@@ -161,7 +135,6 @@ func (s *ScheduleService) update() {
     }
     ttl, _ := strconv.Atoi(ttlStr)
 
-    // Procesar resultados
     fData := make([]models.ScheduleData, 0)
     gData := make([]models.ScheduleData, 0)
 
@@ -189,8 +162,6 @@ func (s *ScheduleService) update() {
                     log.Printf("❌ Error saving Bloque G to Redis: %v", err)
                 }
             }
-        } else {
-            log.Printf("⚠️ Redis no disponible: %v", err)
         }
     }
 
@@ -216,8 +187,12 @@ func (s *ScheduleService) fetchSchedule(client *http.Client, idBloque string) ([
         return nil, err
     }
 
+    // Headers IDENTICOS a los que usa NestJS con axios
     req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
     req.Header.Set("Accept", "application/json")
+    req.Header.Set("Accept-Language", "es-ES,es;q=0.9,en;q=0.8")
+    req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+    req.Header.Set("Connection", "keep-alive")
 
     resp, err := client.Do(req)
     if err != nil {
@@ -225,22 +200,37 @@ func (s *ScheduleService) fetchSchedule(client *http.Client, idBloque string) ([
     }
     defer resp.Body.Close()
 
+    // Manejar respuesta gzip si viene comprimida
+    var reader io.ReadCloser
+    switch resp.Header.Get("Content-Encoding") {
+    case "gzip":
+        reader, err = gzip.NewReader(resp.Body)
+        if err != nil {
+            return nil, err
+        }
+        defer reader.Close()
+    default:
+        reader = resp.Body
+    }
+
     if resp.StatusCode != http.StatusOK {
+        body, _ := io.ReadAll(reader)
+        log.Printf("❌ API Error %d: %s", resp.StatusCode, string(body))
         return nil, fmt.Errorf("API returned status: %d", resp.StatusCode)
     }
 
     var data []models.ScheduleData
-    if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+    if err := json.NewDecoder(reader).Decode(&data); err != nil {
         return nil, err
     }
 
     return data, nil
 }
 
-// GetScheduleF - Obtiene el horario del Bloque F
+// GetScheduleF - Obtiene el horario del Bloque F (como en NestJS)
 func (s *ScheduleService) GetScheduleF() ([]models.ScheduleData, error) {
     log.Printf("🔍 GET /schedule/F - %s", time.Now().Format("2006-01-02 15:04:05"))
-
+    
     // Intentar obtener de Redis
     if s.redis != nil {
         if err := s.redis.Ping(); err == nil {
@@ -251,25 +241,25 @@ func (s *ScheduleService) GetScheduleF() ([]models.ScheduleData, error) {
             }
         }
     }
-
-    // Usar fallback
+    
+    // Usar fallback local
     s.mu.RLock()
     defer s.mu.RUnlock()
-
+    
     fallback, exists := s.fallback["F"]
     if !exists || len(fallback) == 0 {
         log.Printf("⚠️ No hay datos disponibles en fallback")
         return []models.ScheduleData{}, nil
     }
-
+    
     log.Printf("⚠️ Usando fallback local: %d items", len(fallback))
     return fallback, nil
 }
 
-// GetScheduleG - Obtiene el horario del Bloque G
+// GetScheduleG - Obtiene el horario del Bloque G (como en NestJS)
 func (s *ScheduleService) GetScheduleG() ([]models.ScheduleData, error) {
     log.Printf("🔍 GET /schedule/G - %s", time.Now().Format("2006-01-02 15:04:05"))
-
+    
     // Intentar obtener de Redis
     if s.redis != nil {
         if err := s.redis.Ping(); err == nil {
@@ -280,17 +270,17 @@ func (s *ScheduleService) GetScheduleG() ([]models.ScheduleData, error) {
             }
         }
     }
-
-    // Usar fallback
+    
+    // Usar fallback local
     s.mu.RLock()
     defer s.mu.RUnlock()
-
+    
     fallback, exists := s.fallback["G"]
     if !exists || len(fallback) == 0 {
         log.Printf("⚠️ No hay datos disponibles en fallback")
         return []models.ScheduleData{}, nil
     }
-
+    
     log.Printf("⚠️ Usando fallback local: %d items", len(fallback))
     return fallback, nil
 }
