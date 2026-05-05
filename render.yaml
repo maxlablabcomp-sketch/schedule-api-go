@@ -4,16 +4,15 @@ services:
     name: schedule-redis
     plan: free
     maxmemoryPolicy: noeviction
-    ipAllowList: []
 
-  # Servicio Web con Docker
+  # Servicio Web con Docker - Sintaxis VERIFICADA
   - type: web
     name: schedule-api
-    runtime: image
+    runtime: docker
     repo: https://github.com/maxlablabcomp-sketch/schedule-api-go
     plan: free
-    # Elimina dockerfilePath, usa buildContext en su lugar
-    buildContext: .
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     envVars:
       - key: PORT
         value: 3000
