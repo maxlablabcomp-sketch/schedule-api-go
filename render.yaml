@@ -12,8 +12,8 @@ services:
     runtime: image
     repo: https://github.com/maxlablabcomp-sketch/schedule-api-go
     plan: free
-    # La sintaxis correcta para Docker en Render
-    dockerfilePath: ./Dockerfile
+    # Elimina dockerfilePath, usa buildContext en su lugar
+    buildContext: .
     envVars:
       - key: PORT
         value: 3000
