@@ -5,6 +5,7 @@ import (
     "fmt"
     "log"
     "net/http"
+    "net/url"
     "os"
     "strconv"
     "sync"
@@ -22,6 +23,7 @@ type ScheduleService struct {
     apiTimeout  time.Duration
     isUpdating  bool
     updateMutex sync.Mutex
+    proxyURL    string
 }
 
 func NewScheduleService(redisCache *cache.RedisCache) *ScheduleService {
@@ -32,11 +34,15 @@ func NewScheduleService(redisCache *cache.RedisCache) *ScheduleService {
 
     apiTimeout := 300 * time.Second
 
+    // Obtener proxy de variables de entorno
+    proxyURL := os.Getenv("PROXY_URL")
+
     return &ScheduleService{
         redis:      redisCache,
         fallback:   make(map[string][]models.ScheduleData),
         apiURL:     apiURL,
         apiTimeout: apiTimeout,
+        proxyURL:   proxyURL,
     }
 }
 
@@ -44,6 +50,9 @@ func (s *ScheduleService) Start() {
     log.Println("🚀 ScheduleService iniciado")
     log.Printf("⏰ Timeout configurado: %v", s.apiTimeout)
     log.Printf("🌐 API Base URL: %s", s.apiURL)
+    if s.proxyURL != "" {
+        log.Printf("🌐 Usando proxy: %s", s.proxyURL)
+    }
 
     // Primera actualización
     log.Println("📡 Ejecutando primera actualización...")
@@ -68,6 +77,27 @@ func (s *ScheduleService) Start() {
     }()
 }
 
+func (s *ScheduleService) createHTTPClient() *http.Client {
+    client := &http.Client{
+        Timeout: s.apiTimeout,
+    }
+
+    // Configurar proxy si está definido
+    if s.proxyURL != "" {
+        proxy, err := url.Parse(s.proxyURL)
+        if err == nil {
+            client.Transport = &http.Transport{
+                Proxy: http.ProxyURL(proxy),
+            }
+            log.Printf("🌐 Proxy configurado: %s", s.proxyURL)
+        } else {
+            log.Printf("⚠️ Error parsing proxy URL: %v", err)
+        }
+    }
+
+    return client
+}
+
 func (s *ScheduleService) update() {
     // Evitar actualizaciones concurrentes
     s.updateMutex.Lock()
@@ -88,9 +118,7 @@ func (s *ScheduleService) update() {
     log.Println("=================================")
     log.Printf("🕒 %s - Iniciando actualización", time.Now().Format("2006-01-02 15:04:05"))
 
-    client := &http.Client{
-        Timeout: s.apiTimeout,
-    }
+    client := s.createHTTPClient()
 
     // Fetch en paralelo
     type result struct {
@@ -209,6 +237,7 @@ func (s *ScheduleService) fetchSchedule(client *http.Client, idBloque string) ([
     return data, nil
 }
 
+// GetScheduleF - Obtiene el horario del Bloque F
 func (s *ScheduleService) GetScheduleF() ([]models.ScheduleData, error) {
     log.Printf("🔍 GET /schedule/F - %s", time.Now().Format("2006-01-02 15:04:05"))
 
@@ -237,6 +266,7 @@ func (s *ScheduleService) GetScheduleF() ([]models.ScheduleData, error) {
     return fallback, nil
 }
 
+// GetScheduleG - Obtiene el horario del Bloque G
 func (s *ScheduleService) GetScheduleG() ([]models.ScheduleData, error) {
     log.Printf("🔍 GET /schedule/G - %s", time.Now().Format("2006-01-02 15:04:05"))
 
