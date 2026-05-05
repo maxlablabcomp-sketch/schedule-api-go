@@ -31,6 +31,7 @@ func NewScheduleService(redisCache *cache.RedisCache) *ScheduleService {
 
     apiTimeout := 300 * time.Second
 
+    // Crear cliente base
     client := resty.New().
         SetTimeout(apiTimeout).
         SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36").
@@ -39,12 +40,13 @@ func NewScheduleService(redisCache *cache.RedisCache) *ScheduleService {
         SetHeader("Accept-Encoding", "gzip, deflate, br").
         SetHeader("Connection", "keep-alive").
         SetHeader("Cache-Control", "no-cache").
-        SetHeader("Pragma", "no-cache").
-        SetHeader("Sec-Fetch-Dest", "empty").
-        SetHeader("Sec-Fetch-Mode", "cors").
-        SetHeader("Sec-Fetch-Site", "same-origin").
-        SetHeader("Referer", "https://cloud.urbe.edu/").
-        SetHeader("Origin", "https://cloud.urbe.edu")
+        SetHeader("Pragma", "no-cache")
+
+    // Configurar proxy si existe en variables de entorno
+    if proxyURL := os.Getenv("PROXY_URL"); proxyURL != "" {
+        client.SetProxy(proxyURL)
+        log.Printf("🌐 Proxy configurado: %s", proxyURL)
+    }
 
     return &ScheduleService{
         redis:      redisCache,
@@ -108,6 +110,7 @@ func (s *ScheduleService) update() {
 
     results := make(chan result, 2)
 
+    // Bloque F (idBloque=6)
     go func() {
         log.Println("📡 Solicitando BLOQUE F (idBloque=6)...")
         startF := time.Now()
@@ -136,6 +139,7 @@ func (s *ScheduleService) update() {
         results <- result{key: "F", data: fData, err: nil}
     }()
 
+    // Bloque G (idBloque=7)
     go func() {
         log.Println("📡 Solicitando BLOQUE G (idBloque=7)...")
         startG := time.Now()
@@ -184,6 +188,7 @@ func (s *ScheduleService) update() {
         }
     }
 
+    // Guardar en Redis si hay datos
     if len(fData) > 0 || len(gData) > 0 {
         if s.redis != nil {
             if err := s.redis.Ping(); err == nil {
@@ -196,6 +201,7 @@ func (s *ScheduleService) update() {
             }
         }
 
+        // Guardar en fallback local
         s.mu.Lock()
         if len(fData) > 0 {
             s.fallback["F"] = fData
@@ -213,6 +219,7 @@ func (s *ScheduleService) update() {
 func (s *ScheduleService) GetScheduleF() ([]models.ScheduleData, error) {
     log.Printf("🔍 GET /schedule/F - %s", time.Now().Format("2006-01-02 15:04:05"))
 
+    // Intentar obtener de Redis
     if s.redis != nil {
         if err := s.redis.Ping(); err == nil {
             var data []models.ScheduleData
@@ -223,6 +230,7 @@ func (s *ScheduleService) GetScheduleF() ([]models.ScheduleData, error) {
         }
     }
 
+    // Usar fallback local
     s.mu.RLock()
     defer s.mu.RUnlock()
 
@@ -239,6 +247,7 @@ func (s *ScheduleService) GetScheduleF() ([]models.ScheduleData, error) {
 func (s *ScheduleService) GetScheduleG() ([]models.ScheduleData, error) {
     log.Printf("🔍 GET /schedule/G - %s", time.Now().Format("2006-01-02 15:04:05"))
 
+    // Intentar obtener de Redis
     if s.redis != nil {
         if err := s.redis.Ping(); err == nil {
             var data []models.ScheduleData
@@ -249,6 +258,7 @@ func (s *ScheduleService) GetScheduleG() ([]models.ScheduleData, error) {
         }
     }
 
+    // Usar fallback local
     s.mu.RLock()
     defer s.mu.RUnlock()
 
