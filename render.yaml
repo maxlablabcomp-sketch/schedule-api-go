@@ -4,8 +4,9 @@ services:
     name: schedule-redis
     plan: free
     maxmemoryPolicy: noeviction
+    ipAllowList: []  # Permitir conexiones desde cualquier IP (necesario para Render)
 
-  # Servicio Web con Docker - Sintaxis VERIFICADA
+  # Servicio Web con Docker
   - type: web
     name: schedule-api
     runtime: docker
