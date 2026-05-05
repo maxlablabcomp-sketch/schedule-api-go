@@ -1,5 +1,5 @@
-# Etapa 1: Build
-FROM golang:1.21-alpine AS builder
+# Etapa 1: Build - CAMBIAR a Go 1.23
+FROM golang:1.23-alpine AS builder
 
 # Instalar dependencias necesarias
 RUN apk add --no-cache git ca-certificates
@@ -25,9 +25,6 @@ WORKDIR /app
 
 # Copiar el binario desde la etapa builder
 COPY --from=builder /app/main .
-
-# NO copies .env.example - usar variables de entorno de Render
-# COPY --from=builder /app/.env.example .env  <--- ELIMINA ESTA LÍNEA
 
 # Exponer puerto
 EXPOSE 3000
