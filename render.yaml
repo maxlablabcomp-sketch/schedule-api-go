@@ -10,7 +10,7 @@ services:
   - type: web
     name: schedule-api
     runtime: image
-    repo: https://github.com/YOUR_USERNAME/schedule-api-go
+    repo: https://github.com/maxlablabcomp-sketch/schedule-api-go  # <-- CAMBIADO a tu repo
     plan: free
     dockerfilePath: ./Dockerfile
     envVars:
